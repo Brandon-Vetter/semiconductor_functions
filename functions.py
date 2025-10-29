@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from enum import Enum
 
 
 # common varables
@@ -20,14 +21,22 @@ thermal_V_at_300 = (k_J*300)/q
 si_mn = .26*m0
 si_mp = .39*m0
 si_Eg = 1.12
-si_ue = 1417
-si_uh = 471
+si_un = 1417
+si_up = 471
 si_lattice_cosnt = 5.43
 si_e_af = 4.05
 
 # dieletrics
 si_di = 11.8*perm
 siO2_di = 3.9*perm
+
+class Doping(Enum):
+    N_to_P = 0
+    P_to_N = 1
+    P_to_P = 2
+    N_to_N = 3
+    MET = 4
+
 # functions
 def effective_dos(m,T):
     if m == si_mn and T == 300:
@@ -107,15 +116,24 @@ def find_Wdmax(Na, Nd = 0, T=300):
         return np.sqrt(((2*si_di*surf_pot_t(Na, T))/(q*Na)))
     return np.sqrt(((2*si_di*surf_pot(Na, Nd, T))/(q*Na)))
 
-def find_Vfb(Na=0, T=300, EmEf = None, e_af = si_e_af, N_type = True):
-    if EmEf == None and N_type:
-        # figure 5-5 adds them
-        EmEf = si_Eg/2 + bulk(Na, T)
-        return e_af - (e_af + (EmEf))
-    elif EmEf == None and not N_type:
-        # figure #5-6 subs them
-        EmEf = si_Eg/2 - bulk(Na, T)
-        return (e_af + (EmEf)) - e_af
+def find_Vfb(Na=0, T=300, EmEf = None, e_af = si_e_af, doping = Doping.N_to_P):
+    if EmEf is None:
+        if doping == Doping.N_to_P:
+            # figure 5-5 adds them
+            EmEf = si_Eg/2 + bulk(Na, T)
+            return e_af - (e_af + (EmEf))
+        elif doping == Doping.N_to_N:
+            # figure #5-6 subs them
+            EmEf = si_Eg/2 - bulk(Na, T)
+            return e_af - (e_af + (EmEf))
+        elif doping == Doping.P_to_P:
+
+            EmEf = -si_Eg/2 + bulk(Na, T)
+            return e_af - (e_af + (EmEf))
+        elif doping == Doping.P_to_N:
+
+            EmEf = -si_Eg/2 - bulk(Na, T)
+            return e_af - (e_af + (EmEf))
     else:
         return e_af - (e_af + (EmEf))
     
@@ -126,10 +144,22 @@ def C_dep(A, T=300, Na=0, Nd=0):
 def cap(di, d):
     return di/d
 
-def find_Vt(Na, l, T=300, Nd = 0, N_type=True):
+def find_Vt(Na, l=0, cox=0, T=300, Nd = 0, doping=Doping.N_to_P):
+    if cox == 0:
+        cox = cap(siO2_di, l)
     if Nd == 0:
-        return find_Vfb(Na, T, N_type=N_type) + surf_pot_t(Na, T) + np.sqrt(2*q*Na*si_di*surf_pot_t(Na, T))/(cap(siO2_di,l))
-    return find_Vfb(Na, T, N_type=N_type) + surf_pot(Na, Nd,  T) + np.sqrt(2*q*Na*si_di*surf_pot(Na, Nd, T))/(cap(siO2_di,l))
+        if doping==Doping.N_to_P or doping==Doping.P_to_P:
+            return find_Vfb(Na, T, doping=doping) + surf_pot_t(Na, T) + np.sqrt(2*q*Na*si_di*surf_pot_t(Na, T))/(cox)
+    
+        elif doping==Doping.P_to_N or doping==Doping.N_to_N:
+            return find_Vfb(Na, T, doping=doping) - surf_pot_t(Na, T) - np.sqrt(2*q*Na*si_di*surf_pot_t(Na, T))/(cox)
+    
+    if doping==Doping.N_to_P or doping==Doping.P_to_P:
+        return find_Vfb(Na, T, doping=doping) + surf_pot(Na, Nd,  T) + np.sqrt(2*q*Na*si_di*surf_pot(Na, Nd, T))/(cox)
+    
+    elif doping==Doping.N_to_N or doping==Doping.P_to_N:
+        return find_Vfb(Na, T, doping=doping) - surf_pot(Na, Nd,  T) - np.sqrt(2*q*Na*si_di*surf_pot(Na, Nd, T))/(cox)
+    
 
 def find_Vt_cox(Na, cox, T=300, Nd = 0, N_type=True):
     if Nd == 0:
@@ -187,3 +217,154 @@ def dio_G(I0, V, T=300):
 
 def dio_C(G, tau):
     return tau*G
+
+def find_Ids_deeplin(WdL, Vgs, Vt, u, Vds):
+    return WdL*(Vgs-Vt)*u*Vds
+
+def find_Vth(alpha, Vto, Vsb):
+    return Vto + alpha*Vsb
+
+def find_gamma(N, tox=0, cox=0):
+    if cox == 0:
+        cox = cap(siO2_di, tox)
+    return np.sqrt(q*N*2*si_di)/cox
+
+def find_Vth(gamma, Vt0, N, Vsb, T=300):
+    if Vt0 < 0:
+        return Vt0 - gamma*(np.sqrt(surf_pot_t(N, T) + Vsb) - np.sqrt(surf_pot_t(N, T)))
+    return Vt0 + gamma*(np.sqrt(surf_pot_t(N, T) + Vsb) - np.sqrt(surf_pot_t(N, T)))
+
+def alpha(Cdep=0, Cox=0, Tox=0, Wdmax=0):
+    if Cdep and Cox != 0:
+        return Cdep/Cox
+    if Tox and Wdmax != 0:
+        return (3*Tox)/Wdmax
+
+def find_m(alpha):
+    return 1 + alpha
+
+def solve_iteration(desired_value ,desired_value_ind, init_jump, accuracy, func, *args, **kargs):
+
+    debug = False
+    print_num = 10000
+    if "debug" in kargs:
+        debug = kargs["debug"]
+        del kargs["debug"]
+    if "print_amt" in kargs:
+        print_num = kargs["print_amt"]
+        del kargs["print_amt"]
+
+    aerr = accuracy
+    cur_Val = 0
+    perror = lambda E, A:(E - A)/A
+    er = 1
+    ind = 0
+
+    dn = init_jump
+    args = list(args)
+    # not optimal but works
+    while(np.abs(er) > aerr):
+        cur_Val = func(*args, **kargs)
+        er = -perror(cur_Val, desired_value)
+        args[desired_value_ind] += dn*er
+        if debug and ind%print_num == 0:
+            print(f"ind: {ind}")
+            print(f"cur value: {cur_Val}")
+            print(f"error: {er}")
+            print(f"desired value: {desired_value}")
+            print(f"current input: {args[desired_value_ind]}")
+        
+        ind += 1
+    
+    return args[desired_value_ind]
+
+def find_Ids_lin(WdL, Cox, u, vgs, vds, vt, m=1.2):
+    return WdL*Cox*u*(vgs - vt - (m/2)*vds)*vds
+
+def find_Vdsat(vgs, vt, m=1.2):
+    return (vgs-vt)/m
+
+def find_Idsat(WdL, cox, u, vgs, vt, m=1.2):
+    return (WdL/(2*m))*cox*u*(vgs - vt)**2
+
+def find_Ids(WdL, u, vg, vs, vd, vt, m = 1.2, N = 0, cox=0, t=0, T=300):
+    vgs = vg - vs
+    vds = vd - vs
+    if t != 0:
+        cox = cap(siO2_di, t)
+    if N != 0:
+        Vto = find_Vt_cox(N, cox, T)
+        if Vto > vgs:
+            return find_Ids_deeplin(WdL, vgs, vt, u, vds)
+    
+    else:
+        if vt > vgs:
+            return 0
+    
+    Vd_sat = find_Vdsat(vgs, vt, m)
+    if  vgs >= vt and vds < Vd_sat:
+        return find_Ids_lin(WdL, cox, u, vgs, vds, vt, m)
+    
+    if vgs >= vt and vds >= Vd_sat:
+        return find_Idsat(WdL, cox, u, vgs, vt, m)
+
+
+def find_Isd(WdL, u, vg, vs, vd, vt, m = 1.2, N = 0, cox=0, t=0, T=300, doping=Doping.N_to_N):
+    vsg =  vs - vg
+    vsd = vs - vd
+    if t != 0:
+        cox = cap(siO2_di, t)
+    if N != 0:
+        Vto = find_Vt(N, cox=cox, T=T, doping=doping)
+        if -Vto > vsg:
+            return find_Ids_deeplin(WdL, vsg, Vto, u, vsd)
+    
+    else:
+        if np.abs(vt) > vsg:
+            return 0
+    
+    Vd_sat = find_Vdsat(vsg, np.abs(vt), m)
+    if  vsg >= np.abs(vt) and vsd < Vd_sat:
+        return find_Ids_lin(WdL, cox, u, vsg, vsd, np.abs(vt), m)
+    
+    if vsg >= np.abs(vt) and vsd >= Vd_sat:
+        return find_Idsat(WdL, cox, u, -vsg, vt, m)
+
+def find_crossing(line1, line2, x, max_distance=.1):
+    diff = np.abs(line1[0] - line2[0])
+    ret = 0
+    for i in range(len(line1)):
+        if np.abs(line1[i] - line2[i]) < diff:
+            ret = x[i]
+            diff = np.abs(line1[i] - line2[i])
+    
+    if diff <= max_distance: 
+        return ret
+    
+    return None
+
+def ytox(Yvalue, Y, X, dist=.1):
+    ret = 0
+    diff = np.abs(Y[0] - Yvalue)
+    for i in range(len(Y)):
+        if np.abs(Y[i] - Yvalue) < diff:
+            ret = X[i]
+            diff = np.abs(Y[i] - Yvalue)
+    
+    if diff <= dist:
+        return ret
+
+    return None
+
+def xtoy(Xvalue, Y, X, dist=.1):
+    ret = 0
+    diff = np.abs(X[0] - Xvalue)
+    for i in range(len(X)):
+        if np.abs(X[i] - Xvalue) < diff:
+            ret = Y[i]
+            diff = np.abs(X[i] - Xvalue)
+    
+    if diff <= dist:
+        return ret
+
+    return None

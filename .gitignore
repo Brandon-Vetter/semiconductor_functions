@@ -1,0 +1,9 @@
+*.pdf
+*.png
+*.tex
+*.md
+*.log
+*.pyc
+__pycashe__/
+.python-version
+*.csv
