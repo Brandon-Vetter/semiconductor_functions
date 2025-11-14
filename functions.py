@@ -74,7 +74,7 @@ def find_L(D, tau):
     return np.sqrt(D*tau)
 
 def find_inverse_current(A, un, up, Na, Nd, T=300):
-    return A*q*ni(T)**2(find_enstien(up,T)/(find_L(find_enstien(up,T))*Nd) + find_enstien(un,T)/(find_L(find_enstien(un,T))*Na))
+    return A*q*ni(T)**2*(find_enstien(up,T)/(find_L(find_enstien(up,T))*Nd) + find_enstien(un,T)/(find_L(find_enstien(un,T))*Na))
 
 
 def bulk_E(Eg, Ef, Ev):
@@ -107,9 +107,9 @@ def Wdep(Na=0, Nd=0, T=300):
     if Na != 0 and Nd != 0:
         return np.sqrt(((2*si_di*bi_V(Na, Nd, T))/(q))*(1/Na + 1/Nd))
     if Na != 0 and Nd == 0:
-        return np.sqrt(((2*si_di*bi_V(Na, Nd, T))/(q*Na)))
+        return np.sqrt(((2*si_di*surf_pot_t(Na, T))/(q*Na)))
     if Nd != 0 and Nd == 0:
-        return np.sqrt(((2*si_di*bi_V(Na, Nd, T))/(q*Nd)))
+        return np.sqrt(((2*si_di*surf_pot_t(Nd, T))/(q*Nd)))
 
 def find_Wdmax(Na, Nd = 0, T=300):
     if Nd == 0:
@@ -218,8 +218,8 @@ def dio_G(I0, V, T=300):
 def dio_C(G, tau):
     return tau*G
 
-def find_Ids_deeplin(WdL, Vgs, Vt, u, Vds):
-    return WdL*(Vgs-Vt)*u*Vds
+def find_Ids_deeplin(WdL, Vgs, Vt, n, T=300):
+    return WdL*np.exp(q*(Vgs - Vt)/(n*k_J*T))*1E-7
 
 def find_Vth(alpha, Vto, Vsb):
     return Vto + alpha*Vsb
@@ -287,15 +287,19 @@ def find_Vdsat(vgs, vt, m=1.2):
 def find_Idsat(WdL, cox, u, vgs, vt, m=1.2):
     return (WdL/(2*m))*cox*u*(vgs - vt)**2
 
-def find_Ids(WdL, u, vg, vs, vd, vt, m = 1.2, N = 0, cox=0, t=0, T=300):
+def find_Ids(u, vg, vs, vd, vt, WdL=0, m = 1.2, Na = 0, Nd=0, W=0, L=0, cox=0, t=0, T=300):
     vgs = vg - vs
     vds = vd - vs
+    if WdL == 0:
+        WdL = W/L
     if t != 0:
         cox = cap(siO2_di, t)
-    if N != 0:
-        Vto = find_Vt_cox(N, cox, T)
-        if Vto > vgs:
-            return find_Ids_deeplin(WdL, vgs, vt, u, vds)
+    if Na != 0:
+        Vto = find_Vt_cox(Na, cox, T)
+        Cdep = find_cdep(W*L, Na, Nd, T)
+        nu = find_n(Cdep, cox, t)
+        if vt > vgs:
+            return find_Ids_deeplin(WdL, vgs, vt, nu, T)
     
     else:
         if vt > vgs:
@@ -309,15 +313,19 @@ def find_Ids(WdL, u, vg, vs, vd, vt, m = 1.2, N = 0, cox=0, t=0, T=300):
         return find_Idsat(WdL, cox, u, vgs, vt, m)
 
 
-def find_Isd(WdL, u, vg, vs, vd, vt, m = 1.2, N = 0, cox=0, t=0, T=300, doping=Doping.N_to_N):
+def find_Isd(u, vg, vs, vd, vt, WdL=0, m = 1.2, Na = 0, Nd=0, W=0, L=0, cox=0, t=0, T=300, doping=Doping.N_to_N):
     vsg =  vs - vg
     vsd = vs - vd
+    if WdL == 0:
+        WdL = W/L
     if t != 0:
         cox = cap(siO2_di, t)
-    if N != 0:
-        Vto = find_Vt(N, cox=cox, T=T, doping=doping)
-        if -Vto > vsg:
-            return find_Ids_deeplin(WdL, vsg, Vto, u, vsd)
+    if Na != 0:
+        Vto = find_Vt_cox(Na, cox, T)
+        Cdep = find_cdep(W*L, Na, Nd, T)
+        nu = find_n(Cdep, cox, t)
+        if np.abs(vt) > vsg:
+            return find_Ids_deeplin(WdL, vsg, vt, nu, T)
     
     else:
         if np.abs(vt) > vsg:
@@ -368,3 +376,13 @@ def xtoy(Xvalue, Y, X, dist=.1):
         return ret
 
     return None
+
+def find_n(Cdep, Cox=0, l=0):
+    if Cox == 0:
+        Cox = cap(si_di, l)
+    
+    return 1 + Cdep/Cox
+
+def find_cdep(A=1, Na=0, Nd=0, T=300):
+    return A*(si_di/Wdep(Na, Nd, T=T))
+
